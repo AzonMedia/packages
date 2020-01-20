@@ -50,11 +50,19 @@ class Packages
      */
     public function get_local_repository() : WritableRepositoryInterface
     {
-        $composer = Factory::create(new NullIO(), $this->composer_file_path, false);
-        return $composer->getRepositoryManager()->getLocalRepository();
+        //$Composer = Factory::create(new NullIO(), $this->composer_file_path, false);
+        //due to a bug in Composer where it uses the current working directory for the config
+        //the cwd needs to be set to the root of the project instead of the ./app and then restored
+        $cwd = getcwd();
+        chdir(dirname($this->composer_file_path));
+        $Composer = Factory::create(new NullIO(), $this->composer_file_path, false);
+        $Repository = $Composer->getRepositoryManager()->getLocalRepository();
+        chdir($cwd);
+        return $Repository;
     }
 
     /**
+     * Returns all installed packages (by using Composer and looking into ./vendor/composer/installed.json).
      * @return PackageInterface[]
      */
     public function get_installed_packages() : iterable
@@ -73,6 +81,7 @@ class Packages
         $ret = NULL;
         $packages = $this->get_installed_packages();
         $namespace_strlen = 0;
+
         foreach ($packages as $Package) {
             $autoload_rules = $Package->getAutoload();
             if (!empty($autoload_rules['psr-4'])) {
@@ -96,7 +105,7 @@ class Packages
      * @param PackageInterface $Package
      * @return string
      */
-    public function get_package_namespace(PackageInterface $Package) : string
+    public static function get_package_namespace(PackageInterface $Package) : string
     {
         $ret = '';
         $autoload_rules = $Package->getAutoload();
@@ -121,6 +130,7 @@ class Packages
                 //do not stop at the first found as this is probably the composer.json of this or another package
                 //continue until the top most composer.json is found.
             }
+            $path = dirname($path);
         } while($path !== '/');
         return $ret;
     }
