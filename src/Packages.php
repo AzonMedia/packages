@@ -84,6 +84,9 @@ class Packages
 
         foreach ($packages as $Package) {
             $autoload_rules = $Package->getAutoload();
+            if ($Package->getName() === 'guzaba/guzaba2') {
+                print_r($autoload_rules);
+            }
             if (!empty($autoload_rules['psr-4'])) {
                 foreach ($autoload_rules['psr-4'] as $namespace=>$path) {
                     if (strpos($class_name, $namespace) === 0) {
