@@ -55,7 +55,7 @@ class Packages
     }
 
     /**
-     * @return iterable
+     * @return PackageInterface[]
      */
     public function get_installed_packages() : iterable
     {
@@ -87,6 +87,41 @@ class Packages
                 }
             }
         }
+        return $ret;
+    }
+
+    /**
+     * Returns the psr-4 namespace of the package.
+     * Supports only psr-4 packages and returns the first namespace.
+     * @param PackageInterface $Package
+     * @return string
+     */
+    public function get_package_namespace(PackageInterface $Package) : string
+    {
+        $ret = '';
+        $autoload_rules = $Package->getAutoload();
+        if ($autoload_rules['psr-4']) {
+            $ret = array_key_first($autoload_rules['psr-4']);
+        }
+        return $ret;
+    }
+
+    /**
+     * Returns the topmost composer.json file starting from the current directory.
+     * @return string
+     */
+    public static function get_application_composer_file_path() : string
+    {
+        $ret = '';
+        $path = __DIR__;
+        do {
+            $file = $path.'/composer.json';
+            if (file_exists($file) && is_readable($file)) {
+                $ret = $file;
+                //do not stop at the first found as this is probably the composer.json of this or another package
+                //continue until the top most composer.json is found.
+            }
+        } while($path !== '/');
         return $ret;
     }
 }
