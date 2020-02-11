@@ -3,9 +3,12 @@ declare(strict_types=1);
 
 namespace Azonmedia\Packages;
 
+use Composer\Composer;
 use Composer\Factory;
+use Composer\Installer\InstallationManager;
 use Composer\IO\NullIO;
 use Composer\Package\PackageInterface;
+use Composer\Repository\RepositoryManager;
 use Composer\Repository\WritableRepositoryInterface;
 
 /**
@@ -45,20 +48,37 @@ class Packages
         return $this->composer_file_path;
     }
 
-    /**
-     * @return WritableRepositoryInterface
-     */
-    public function get_local_repository() : WritableRepositoryInterface
+    public function get_composer() : Composer
     {
         //$Composer = Factory::create(new NullIO(), $this->composer_file_path, false);
         //due to a bug in Composer where it uses the current working directory for the config
         //the cwd needs to be set to the root of the project instead of the ./app and then restored
         $cwd = getcwd();
         chdir(dirname($this->composer_file_path));
-        $Composer = Factory::create(new NullIO(), $this->composer_file_path, false);
-        $Repository = $Composer->getRepositoryManager()->getLocalRepository();
-        chdir($cwd);
-        return $Repository;
+        try {
+            $Composer = Factory::create(new NullIO(), $this->composer_file_path, false);
+        } finally {
+            chdir($cwd);
+        }
+        return $Composer;
+    }
+
+    public function get_installation_manager(): InstallationManager
+    {
+        return $this->get_composer()->getInstallationManager();
+    }
+
+    public function get_repository_manager() : RepositoryManager
+    {
+        return $this->get_composer()->getRepositoryManager();
+    }
+
+    /**
+     * @return WritableRepositoryInterface
+     */
+    public function get_local_repository() : WritableRepositoryInterface
+    {
+        return $this->get_repository_manager()->getLocalRepository();
     }
 
     /**
@@ -68,6 +88,39 @@ class Packages
     public function get_installed_packages() : iterable
     {
         return $this->get_local_repository()->getPackages();
+    }
+
+    public function get_package_installation_path(PackageInterface $Package) : ?string
+    {
+        $ret = NULL;
+        $packages = $this->get_installed_packages();
+        $InstallationManager = $this->get_installation_manager();
+        foreach ($packages as $InstalledPackage) {
+            if ($InstalledPackage->getName() === $Package->getName()) {
+                $ret = $InstallationManager->getInstallPath($Package);
+                break;
+            }
+        }
+        return $ret;
+    }
+
+    /**
+     * Returns the path to the source code. Returns relative path.
+     * Works only on packages using psr-4 autoloader and supports only a single namespace/path combination.
+     * @param PackageInterface $Package
+     * @return string|null
+     */
+    public static function get_package_src_path(PackageInterface $Package) : ?string
+    {
+        $ret = NULL;
+        $autoload_rules = $Package->getAutoload();
+        if (!empty($autoload_rules['psr-4'])) {
+            foreach ($autoload_rules['psr-4'] as $namespace=>$path) {
+                $ret = $path;
+                break;
+            }
+        }
+        return $ret;
     }
 
     /**
