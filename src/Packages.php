@@ -37,6 +37,20 @@ class Packages
             throw new \InvalidArgumentException(sprintf('The provided path %s is not readable.', $composer_file_path));
         }
         $this->composer_file_path = $composer_file_path;
+        $this->check_home_dir();
+
+
+    }
+
+    private function check_home_dir(): void
+    {
+        $home_dir = getenv('HOME');
+        if (!$home_dir) {
+            //$user = `whoami`;
+            //$home_dir = $user === 'root' ? '/root' : '/home/'.$user;
+            $home_dir = dirname($this->composer_file_path);//create the cache in the project dir as the home dir may not exist (for user www-data may not have home dir)
+            putenv("HOME={$home_dir}");
+        }
     }
 
     /**
@@ -93,6 +107,12 @@ class Packages
     public function get_package_installation_path(PackageInterface $Package) : ?string
     {
         $ret = NULL;
+
+        static $ret_cache = [];
+        if (array_key_exists($Package->getName(), $ret_cache)) {
+            return $ret_cache[$Package->getName()];
+        }
+
         $packages = $this->get_installed_packages();
         $InstallationManager = $this->get_installation_manager();
         foreach ($packages as $InstalledPackage) {
@@ -101,6 +121,9 @@ class Packages
                 break;
             }
         }
+
+        $ret_cache[$Package->getName()] = $ret;
+
         return $ret;
     }
 
@@ -132,6 +155,14 @@ class Packages
     public function get_package_by_class(string $class_name) : ?PackageInterface
     {
         $ret = NULL;
+
+        //cache these as the number of files can be quite large
+        //caching these in swoole context is not a problem as the classes & packages dont change during execution
+        static $ret_cache = [];
+        if (array_key_exists($class_name, $ret_cache)) {
+            return $ret_cache[$class_name];
+        }
+
         $packages = $this->get_installed_packages();
         $namespace_strlen = 0;
 
@@ -144,11 +175,31 @@ class Packages
                         if (strlen($namespace) > $namespace_strlen) {
                             $namespace_strlen = strlen($namespace);
                             $ret = $Package;
+                            //do not break here - keep iterating until the deepest namespace match is found
                         }
                     }
                 }
             }
         }
+
+        //if nothing was found in the psr-4 autoloaders look for the other autoloaders
+        //isolate the first namespace part
+        $ns_1 = explode('\\', $class_name)[0];
+        //and look for it...
+        foreach ($packages as $Package) {
+            $autoload_rules = $Package->getAutoload();
+            if (!empty($autoload_rules['files'])) {
+                foreach ($autoload_rules['files'] as $file) {
+                    if (stripos($file, $ns_1) !== false) {
+                        $ret = $Package;
+                        break;
+                    }
+                }
+            }
+        }
+
+        $ret_cache[$class_name] = $ret;
+
         return $ret;
     }
 
@@ -162,9 +213,15 @@ class Packages
     {
         $ret = '';
         $autoload_rules = $Package->getAutoload();
-        if ($autoload_rules['psr-4']) {
+        if (!empty($autoload_rules['psr-4'])) {
             $ret = array_key_first($autoload_rules['psr-4']);
         }
+        //there is no reliable way to use the 'files'
+//        if (!$ret) {
+//            if (!empty($autoload_rules['files'])) {
+//
+//            }
+//        }
         return $ret;
     }
 
